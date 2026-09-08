@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.log
+
+# ---- Secrets: NEVER commit ----
+.env
+.env.local
+local.env
+lodcal.env
+*.pem
+*.key
+
+# Template holding placeholder values only — safe and useful to commit
+!.env.example
