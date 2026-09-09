@@ -219,6 +219,18 @@ Every error in the system returns the same shape:
 | 422 | `VALIDATION_ERROR` | Includes a per-field `details` array |
 | 502 | `UPSTREAM_ERROR` | NibssByPhoenix failed. Not the caller's fault |
 
+## Postman collection
+
+A ready-to-run Postman collection covering every endpoint lives in
+[`postman/OUR-Bank.postman_collection.json`](postman/OUR-Bank.postman_collection.json).
+
+**To use it:** Postman → Import → drop the file in → run the requests top to
+bottom. The JWT is captured automatically after Register or Login, so no token
+is ever pasted by hand.
+
+Each request carries a description explaining what it does and which rules to
+try breaking, and every request asserts its own expected behaviour.
+
 ---
 
 ## End-to-end walkthrough

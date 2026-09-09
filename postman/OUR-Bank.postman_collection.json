@@ -1,0 +1,449 @@
+{
+  "info": {
+    "name": "OUR Bank — Digital Banking Backend",
+    "description": "All 13 endpoints of the OUR Bank digital banking backend, plus a health check.\n\n## How to use\n\n1. Start the server: `npm run dev`\n2. Run the requests **in order, top to bottom** — each one depends on the last.\n3. The JWT is captured automatically. You never paste a token by hand.\n\n## Collection variables\n\n| Variable | Purpose |\n|---|---|\n| `baseUrl` | Server address. Change this if you deploy. |\n| `token` | Set automatically by Register / Login. |\n| `myAccount` | Set automatically when you create an account. |\n| `recipientAccount` | The account you transfer TO. Edit this. |\n| `reference` | Set automatically after a transfer. |\n\n## Note on repeat runs\n\n`Register` and `Submit BVN` generate a random email and BVN on every run, so you can execute the whole collection repeatedly without 'already exists' errors.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "myAccount", "value": "", "type": "string" },
+    { "key": "recipientAccount", "value": "2106021116", "type": "string" },
+    { "key": "reference", "value": "", "type": "string" },
+    { "key": "bvn", "value": "", "type": "string" },
+    { "key": "nin", "value": "", "type": "string" },
+    { "key": "dob", "value": "1994-02-11", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "00 — Health check",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] },
+        "description": "Confirms the server is running and connected. Run this first — if it fails, nothing else will work."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('server is up', () => pm.response.to.have.status(200));",
+              "pm.test('reports the bank identity', () => {",
+              "  pm.expect(pm.response.json().bank).to.be.a('string');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "01 — Register",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{$randomEmail}}\",\n  \"password\": \"SuperSecret123\",\n  \"firstName\": \"Grace\",\n  \"lastName\": \"Adeyemi\",\n  \"phone\": \"08055512345\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] },
+            "description": "Creates a customer of OUR Bank. No KYC yet — this customer cannot open an account until they verify a BVN or NIN.\n\nReturns a JWT, which this request saves into the `token` variable automatically.\n\n`{{$randomEmail}}` is a built-in Postman variable, so every run creates a fresh customer."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('returns a token', () => pm.expect(body.token).to.be.a('string'));",
+                  "pm.test('never leaks the password hash', () => {",
+                  "  pm.expect(body.customer).to.not.have.property('passwordHash');",
+                  "});",
+                  "",
+                  "// Capture the token so every later request is authenticated.",
+                  "pm.collectionVariables.set('token', body.token);",
+                  "console.log('Registered:', body.customer.email);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 — Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"grace@ourbank.ng\",\n  \"password\": \"GracePass123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] },
+            "description": "Exchange email + password for a JWT.\n\nTry it with a wrong password, and then with an email that does not exist. **Both return the identical message** — that is deliberate, so an attacker cannot discover which emails bank here."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('token', pm.response.json().token);",
+                  "  pm.test('login succeeded', () => pm.expect(pm.response.json().token).to.be.a('string'));",
+                  "} else {",
+                  "  pm.test('bad credentials are rejected with 401', () => pm.response.to.have.status(401));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 — Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/auth/me", "host": ["{{baseUrl}}"], "path": ["api", "auth", "me"] },
+            "description": "Returns the customer identified by the token.\n\n**Try this:** delete the token variable, or change one character of it, and re-send. You get 401 — the signature no longer verifies."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "KYC — Requirement 1",
+      "item": [
+        {
+          "name": "04 — Submit BVN",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Generate a fresh synthetic 11-digit BVN so the collection can be re-run.",
+                  "// NO REAL BVN IS EVER USED — the brief forbids it.",
+                  "const bvn = '222' + Math.floor(10000000 + Math.random() * 89999999);",
+                  "pm.collectionVariables.set('bvn', bvn.slice(0, 11));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('KYC is marked verified', () => {",
+                  "  pm.expect(pm.response.json().kyc.verified).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bvn\": \"{{bvn}}\",\n  \"dob\": \"{{dob}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/kyc/bvn", "host": ["{{baseUrl}}"], "path": ["api", "kyc", "bvn"] },
+            "description": "Inserts the BVN upstream, then validates it, then records verification.\n\nNotice you only send `bvn` and `dob` — your name and phone come from your Customer record. We never ask for data we already hold.\n\n**Identity binding:** if you submit a BVN registered to a different name, you get 403. Try it — run this once, note the BVN from the console, then register a NEW customer with a different name and submit that same BVN."
+          }
+        },
+        {
+          "name": "05 — Submit NIN",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const nin = '333' + Math.floor(10000000 + Math.random() * 89999999);",
+                  "pm.collectionVariables.set('nin', nin.slice(0, 11));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// If you already verified a BVN, this SHOULD fail with 409.",
+                  "// One KYC record per customer is the rule.",
+                  "if (pm.response.code === 409) {",
+                  "  pm.test('second KYC correctly rejected', () => pm.response.to.have.status(409));",
+                  "} else {",
+                  "  pm.test('status is 201 Created', () => pm.response.to.have.status(201));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nin\": \"{{nin}}\",\n  \"dob\": \"{{dob}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/kyc/nin", "host": ["{{baseUrl}}"], "path": ["api", "kyc", "nin"] },
+            "description": "The NIN alternative to a BVN.\n\n**Expected result if you already ran Submit BVN: 409 Conflict.** A customer may hold only ONE KYC record — the brief says BVN *or* NIN, not both."
+          }
+        },
+        {
+          "name": "06 — KYC status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/kyc/status", "host": ["{{baseUrl}}"], "path": ["api", "kyc", "status"] },
+            "description": "Shows whether this customer is verified, and by which method."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Account — Requirement 2",
+      "item": [
+        {
+          "name": "07 — Create account",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/account", "host": ["{{baseUrl}}"], "path": ["api", "account"] },
+            "description": "Opens the customer's single account.\n\nThere is **no request body** — everything needed comes from the verified KYC record and the token.\n\n**Two rules to try breaking:**\n1. Run this before doing KYC → 403.\n2. Run it twice → 409. One account per customer, enforced by a unique database index."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const acct = pm.response.json().account;",
+                  "  pm.collectionVariables.set('myAccount', acct.accountNumber);",
+                  "  pm.test('account created', () => pm.expect(acct.accountNumber).to.be.a('string'));",
+                  "  pm.test('pre-funded with N15,000', () => {",
+                  "    pm.expect(pm.response.json().balance).to.eql(15000);",
+                  "  });",
+                  "  console.log('Account:', acct.accountNumber);",
+                  "} else {",
+                  "  pm.test('duplicate or ungated creation is rejected', () => {",
+                  "    pm.expect([403, 409]).to.include(pm.response.code);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 — My account + balance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/account", "host": ["{{baseUrl}}"], "path": ["api", "account"] },
+            "description": "Your account details with a **live** balance read from NIBSS.\n\nNotice there is no `:accountNumber` in this URL. That is deliberate — you cannot ask for an account that is not yours, because there is no way to name one. This prevents IDOR (Insecure Direct Object Reference)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns a numeric balance', () => {",
+                  "  pm.expect(pm.response.json().account.balance).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Banking operations — Requirement 3",
+      "item": [
+        {
+          "name": "09 — Name enquiry",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transfer/name-enquiry/{{recipientAccount}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "transfer", "name-enquiry", "{{recipientAccount}}"]
+            },
+            "description": "Confirms who you are about to pay, before any money moves.\n\nThis is the single most effective anti-fraud control in retail banking. It also tells you whether the transfer will be INTRA (same bank) or INTER (another bank), by comparing bank codes."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('resolves a real account name', () => {",
+                  "  pm.expect(pm.response.json().accountName).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 — Transfer funds",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": \"{{recipientAccount}}\",\n  \"amount\": 2500,\n  \"narration\": \"Lunch money\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/transfer", "host": ["{{baseUrl}}"], "path": ["api", "transfer"] },
+            "description": "Moves real money on the NIBSS rails.\n\n**Look at what is missing: there is no `from` field.** The sender is taken from your token, so there is no input with which to spend someone else's money. The attack is not blocked — it is unrepresentable.\n\n**Things to try:**\n- amount larger than your balance → 400 with the exact figures\n- your own account number as `to` → 400\n- a negative amount → 422 validation error"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const t = pm.response.json().transfer;",
+                  "  pm.collectionVariables.set('reference', t.reference);",
+                  "  pm.test('transfer accepted', () => pm.expect(t.reference).to.be.a('string'));",
+                  "  pm.test('scope is classified', () => {",
+                  "    pm.expect(['INTRA', 'INTER']).to.include(t.scope);",
+                  "  });",
+                  "  console.log('Reference:', t.reference);",
+                  "} else {",
+                  "  pm.test('invalid transfer is rejected', () => {",
+                  "    pm.expect([400, 422]).to.include(pm.response.code);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11 — Transaction status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transfer/status/{{reference}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "transfer", "status", "{{reference}}"]
+            },
+            "description": "Looks up a transaction by reference.\n\n**Ownership guard:** we first check the reference exists in YOUR ledger. If it belongs to another customer you get **404, not 403** — because 403 would confirm the transaction exists, and references are timestamp-based and therefore guessable.\n\n**Try it:** register a second customer, then request this same reference with their token."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('own transaction is visible', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "History — Requirement 4",
+      "item": [
+        {
+          "name": "12 — Transaction history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "transactions"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "direction", "value": "DEBIT", "disabled": true },
+                { "key": "status", "value": "SUCCESS", "disabled": true },
+                { "key": "scope", "value": "INTRA", "disabled": true }
+              ]
+            },
+            "description": "Your own transaction history, newest first, paginated.\n\nTick the disabled query params to filter. Every filter can only ever make the result set **smaller** — none can widen it beyond your own rows, because `customerId` from your token is always the first key in the database query.\n\n**Double-entry:** if you transferred to another customer of this bank, they hold a CREDIT row with the same reference as your DEBIT row. Same event, two perspectives."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('is paginated', () => pm.expect(b.pagination).to.be.an('object'));",
+                  "pm.test('every row belongs to this account', () => {",
+                  "  const mine = pm.collectionVariables.get('myAccount');",
+                  "  if (mine) b.transactions.forEach(t => pm.expect(t.accountNumber).to.eql(mine));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13 — Transaction summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/transactions/summary", "host": ["{{baseUrl}}"], "path": ["api", "transactions", "summary"] },
+            "description": "Totals sent and received for this customer only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
